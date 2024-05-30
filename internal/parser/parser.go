@@ -46,6 +46,11 @@ type Parser struct {
 	index int
 }
 
+// Parse parses the codepoints in the Parser according to the jsonpath grammar rules.
+func (p *Parser) Parse() error {
+    return p.jsonpathQuery()
+}
+
 // errorUnsupportedToken returns an ErrUnsupportedToken error with the current state of
 // the Parser's currCodepoint and index.
 func (p *Parser) errorUnsupportedToken() ErrUnexpectedToken {
