@@ -1,7 +1,7 @@
 package grammar
 
 const (
-	Root = '$'
+	Dollar = '$'
 
 	Space          = '\x20'
 	HorizonalTab   = '\x09'
@@ -53,4 +53,18 @@ const (
 
 	Ampersand = '&'
 	Pipe      = '|'
+)
+
+var (
+	Null = [...]rune{'n', 'u', 'l', 'l'}
+
+	True  = [...]rune{'t', 'r', 'u', 'e'}
+	False = [...]rune{'f', 'a', 'l', 's', 'e'}
+
+	And = [...]rune{Ampersand, Ampersand}
+	Or  = [...]rune{Pipe, Pipe}
+
+	DescendantPrefix = [...]rune{Dot, Dot}
+
+	Escapable = [...]rune{BS, FF, LF, CR, HT, Slash, BackSlash}
 )

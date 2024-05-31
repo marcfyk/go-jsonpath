@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/marcfyk/go-jsonpath/internal/grammar"
@@ -48,7 +47,7 @@ type Parser struct {
 
 // Parse parses the codepoints in the Parser according to the jsonpath grammar rules.
 func (p *Parser) Parse() error {
-    return p.jsonpathQuery()
+	return p.queryJSONPath()
 }
 
 // errorUnsupportedToken returns an ErrUnsupportedToken error with the current state of
@@ -100,16 +99,16 @@ func (p *Parser) expect(codepoint rune) error {
 	return p.expectBy(func(r rune) bool { return r == codepoint })
 }
 
-// jsonpathQuery will parse the given codepoints based on the jsonpath grammar rules.
-func (p *Parser) jsonpathQuery() error {
-	if err := p.rootIdent(); err != nil {
+// queryJSONPath will parse the given codepoints based on the jsonpath grammar rules.
+func (p *Parser) queryJSONPath() error {
+	if err := p.identRootNode(); err != nil {
 		return err
 	}
 	return p.segments()
 }
 
-func (p *Parser) rootIdent() error {
-	return p.expect(grammar.Root)
+func (p *Parser) identRootNode() error {
+	return p.expect(grammar.Dollar)
 }
 
 func (p *Parser) blankSpace() {
@@ -131,23 +130,30 @@ func (p *Parser) segments() error {
 }
 
 func (p *Parser) segment() error {
-	if p.childSegment() == nil {
+	if p.segmentChild() == nil {
 		return nil
+	} else if p.segmentDescendant() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.descendantSegment()
 }
 
-func (p *Parser) childSegment() error {
+func (p *Parser) segmentChild() error {
 	if err := p.bracketedSelection(); err == nil {
 		return nil
+	} else {
+		if err := p.expect(grammar.Dot); err != nil {
+			return err
+		}
+		if p.selectorWildcard() == nil {
+			return nil
+		} else if p.memberNameShorthand() == nil {
+			return nil
+		} else {
+			return p.errorUnsupportedToken()
+		}
 	}
-	if err := p.expect(grammar.Dot); err != nil {
-		return err
-	}
-	if err := p.wildcardSelector(); err == nil {
-		return nil
-	}
-	return p.memberNameShorthand()
 }
 
 func (p *Parser) bracketedSelection() error {
@@ -176,71 +182,77 @@ func (p *Parser) bracketedSelection() error {
 }
 
 func (p *Parser) selector() error {
-	if p.nameSelector() == nil {
+	if p.selectorName() == nil {
 		return nil
-	}
-	if p.wildcardSelector() == nil {
+	} else if p.selectorWildcard() == nil {
 		return nil
-	}
-	if p.sliceSelector() == nil {
+	} else if p.selectorSlice() == nil {
 		return nil
-	}
-	if p.indexSelector() == nil {
+	} else if p.selectorIndex() == nil {
 		return nil
+	} else if p.selectorFilter() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.filterSelector()
 }
 
-func (p *Parser) nameSelector() error {
-	return p.stringLiteral()
+func (p *Parser) selectorName() error {
+	return p.literalString()
 }
 
-func (p *Parser) stringLiteral() error {
+func (p *Parser) literalString() error {
 	if p.expect(grammar.QuoteDouble) == nil {
-		for p.doubleQuoted() == nil {
+		for p.quotedDouble() == nil {
 		}
 		return p.expect(grammar.QuoteDouble)
+	} else if p.expect(grammar.QuoteSingle) == nil {
+		for p.quotedSingle() == nil {
+		}
+		return p.expect(grammar.QuoteSingle)
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	if err := p.expect(grammar.QuoteSingle); err != nil {
-		return nil
-	}
-	for p.singleQuoted() == nil {
-	}
-	return p.expect(grammar.QuoteSingle)
 }
 
-func (p *Parser) doubleQuoted() error {
-	return p.quoted(grammar.QuoteDouble)
-}
-
-func (p *Parser) singleQuoted() error {
-	return p.quoted(grammar.QuoteSingle)
-}
-
-func (p *Parser) quoted(quote rune) error {
-
+func (p *Parser) quotedDouble() error {
 	if p.expectBy(isUnescaped) == nil {
 		return nil
-	}
-	unescapedQuote, err := getUnescapedQuote(quote)
-	if err != nil {
-		return err
-	}
-	if p.expect(unescapedQuote) == nil {
+	} else if p.expect(grammar.QuoteSingle) == nil {
 		return nil
+	} else if p.expect(grammar.Esc) == nil {
+		if p.expect(grammar.QuoteDouble) == nil {
+			return nil
+		} else if p.escapable() == nil {
+			return nil
+		} else {
+			return p.errorUnsupportedToken()
+		}
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	if err := p.expect(grammar.Esc); err != nil {
-		return err
-	}
-	if p.expect(quote) == nil {
+}
+
+func (p *Parser) quotedSingle() error {
+	if p.expectBy(isUnescaped) == nil {
 		return nil
+	} else if p.expect(grammar.QuoteDouble) == nil {
+		return nil
+	} else if p.expect(grammar.Esc) == nil {
+		if p.expect(grammar.QuoteSingle) == nil {
+			return nil
+		} else if p.escapable() == nil {
+			return nil
+		} else {
+			return p.errorUnsupportedToken()
+		}
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.escapable()
 }
 
 func (p *Parser) escapable() error {
-	elements := [...]rune{grammar.BS, grammar.FF, grammar.LF, grammar.CR, grammar.HT, grammar.Slash, grammar.BackSlash}
-	for _, r := range elements {
+	for _, r := range grammar.Escapable {
 		if p.expect(r) == nil {
 			return nil
 		}
@@ -254,30 +266,42 @@ func (p *Parser) escapable() error {
 func (p *Parser) hexChar() error {
 	if p.nonSurrogate() == nil {
 		return nil
+	} else {
+		if err := p.highSurrogate(); err != nil {
+			return err
+		}
+		if err := p.expect(grammar.BackSlash); err != nil {
+			return err
+		}
+		if err := p.expect(grammar.UnicodeEscape); err != nil {
+			return err
+		}
+		return p.lowSurrogate()
 	}
-	if err := p.highSurrogate(); err != nil {
-		return err
-	}
-	if err := p.expect(grammar.BackSlash); err != nil {
-		return err
-	}
-	if err := p.expect(grammar.UnicodeEscape); err != nil {
-		return err
-	}
-	return p.lowSurrogate()
 }
 
 func (p *Parser) nonSurrogate() error {
-	err := func() error {
-		if p.expectBy(isDigit) == nil {
-			return nil
+
+	if p.expect('D') == nil {
+		if err := p.expectBy(isDigit0To7); err != nil {
+			return err
 		}
-		for _, r := range [...]rune{'A', 'B', 'C', 'E'} {
-			if p.expect(r) == nil {
-				return nil
+		for range 2 {
+			if err := p.expectBy(isHexDig); err != nil {
+				return err
 			}
 		}
-		if err := p.expect('F'); err != nil {
+		return nil
+	} else {
+		predicate := func(r rune) bool {
+			return isDigit(r) ||
+				r == 'A' ||
+				r == 'B' ||
+				r == 'C' ||
+				r == 'E' ||
+				r == 'F'
+		}
+		if err := p.expectBy(predicate); err != nil {
 			return err
 		}
 		for range 3 {
@@ -286,37 +310,20 @@ func (p *Parser) nonSurrogate() error {
 			}
 		}
 		return nil
-	}()
-	if err == nil {
-		return nil
 	}
-	if err := p.expect('D'); err != nil {
-		return err
-	}
-	if err := p.expectBy(isDigit0To7); err != nil {
-		return err
-	}
-	for range 2 {
-		if err := p.expectBy(isHexDig); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (p *Parser) highSurrogate() error {
 	if err := p.expect('D'); err != nil {
 		return err
 	}
-	err := func() error {
-		for _, r := range [...]rune{'8', '9', 'A', 'B'} {
-			if p.expect(r) == nil {
-				return nil
-			}
-		}
-		return p.errorUnsupportedToken()
-	}()
-	if err != nil {
+	predicate := func(r rune) bool {
+		return r == '8' ||
+			r == '9' ||
+			r == 'A' ||
+			r == 'B'
+	}
+	if err := p.expectBy(predicate); err != nil {
 		return err
 	}
 	for range 2 {
@@ -331,31 +338,28 @@ func (p *Parser) lowSurrogate() error {
 	if err := p.expect('D'); err != nil {
 		return err
 	}
-	err := func() error {
-		for _, r := range [...]rune{'C', 'D', 'E', 'F'} {
-			if p.expect(r) == nil {
-				return nil
-			}
-		}
-		return p.errorUnsupportedToken()
-	}()
-	if err != nil {
+	predicate := func(r rune) bool {
+		return r == 'C' ||
+			r == 'D' ||
+			r == 'E' ||
+			r == 'F'
+	}
+	if err := p.expectBy(predicate); err != nil {
 		return err
 	}
 	for range 2 {
-		if err := p.expectBy(isHexDig); err != nil {
+		if err := p.hexChar(); err != nil {
 			return err
 		}
 	}
 	return nil
-
 }
 
-func (p *Parser) wildcardSelector() error {
+func (p *Parser) selectorWildcard() error {
 	return p.expect(grammar.Wildcard)
 }
 
-func (p *Parser) sliceSelector() error {
+func (p *Parser) selectorSlice() error {
 	if p.start() == nil {
 		p.blankSpace()
 	}
@@ -367,8 +371,10 @@ func (p *Parser) sliceSelector() error {
 		p.blankSpace()
 	}
 	if p.expect(grammar.Colon) == nil {
-		p.blankSpace()
-		_ = p.step()
+		if p.matchBy(isBlankSpace) {
+			p.blankSpace()
+			_ = p.step()
+		}
 	}
 	return nil
 }
@@ -388,21 +394,22 @@ func (p *Parser) step() error {
 func (p *Parser) int() error {
 	if p.expect('0') == nil {
 		return nil
+	} else {
+		_ = p.expect(grammar.Minus)
+		if err := p.expectBy(isDigit1); err != nil {
+			return err
+		}
+		for p.expectBy(isDigit) == nil {
+		}
+		return nil
 	}
-	_ = p.expect(grammar.Minus)
-	if err := p.expectBy(isDigit1); err != nil {
-		return err
-	}
-	for p.expectBy(isDigit) == nil {
-	}
-	return nil
 }
 
-func (p *Parser) indexSelector() error {
+func (p *Parser) selectorIndex() error {
 	return p.int()
 }
 
-func (p *Parser) filterSelector() error {
+func (p *Parser) selectorFilter() error {
 	if err := p.expect(grammar.Question); err != nil {
 		return err
 	}
@@ -411,11 +418,11 @@ func (p *Parser) filterSelector() error {
 }
 
 func (p *Parser) logicalExpr() error {
-	return p.logicalOrExpr()
+	return p.logicalExprOr()
 }
 
-func (p *Parser) logicalOrExpr() error {
-	if err := p.logicalAndExpr(); err != nil {
+func (p *Parser) logicalExprOr() error {
+	if err := p.logicalExprAnd(); err != nil {
 		return err
 	}
 	for {
@@ -423,21 +430,18 @@ func (p *Parser) logicalOrExpr() error {
 			break
 		}
 		p.blankSpace()
-		if err := p.expect(grammar.Pipe); err != nil {
-			return err
-		}
-		if err := p.expect(grammar.Pipe); err != nil {
+		if err := p.or(); err != nil {
 			return err
 		}
 		p.blankSpace()
-		if err := p.logicalAndExpr(); err != nil {
+		if err := p.logicalExprAnd(); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *Parser) logicalAndExpr() error {
+func (p *Parser) logicalExprAnd() error {
 	if err := p.basicExpr(); err != nil {
 		return err
 	}
@@ -446,10 +450,7 @@ func (p *Parser) logicalAndExpr() error {
 			break
 		}
 		p.blankSpace()
-		if err := p.expect(grammar.Ampersand); err != nil {
-			return err
-		}
-		if err := p.expect(grammar.Ampersand); err != nil {
+		if err := p.and(); err != nil {
 			return err
 		}
 		p.blankSpace()
@@ -463,15 +464,17 @@ func (p *Parser) logicalAndExpr() error {
 func (p *Parser) basicExpr() error {
 	if p.parenExpr() == nil {
 		return nil
-	}
-	if p.comparisonExpr() == nil {
+	} else if p.comparisonExpr() == nil {
 		return nil
+	} else if p.testExpr() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.testExpr()
 }
 
 func (p *Parser) parenExpr() error {
-	_ = p.logicalNotOp()
+	_ = p.not()
 	p.blankSpace()
 	if err := p.expect(grammar.ParenthesisOpen); err != nil {
 		return err
@@ -484,8 +487,26 @@ func (p *Parser) parenExpr() error {
 	return p.expect(grammar.ParenthesisClose)
 }
 
-func (p *Parser) logicalNotOp() error {
+func (p *Parser) not() error {
 	return p.expect(grammar.Bang)
+}
+
+func (p *Parser) and() error {
+	for _, r := range grammar.And {
+		if err := p.expect(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) or() error {
+	for _, r := range grammar.Or {
+		if err := p.expect(r); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Parser) comparisonExpr() error {
@@ -503,62 +524,52 @@ func (p *Parser) comparisonExpr() error {
 func (p *Parser) comparable() error {
 	if p.literal() == nil {
 		return nil
-	}
-	if p.singularQuery() == nil {
+	} else if p.querySingular() == nil {
 		return nil
+	} else if p.functionExpr() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.functionExpr()
 }
 
 func (p *Parser) literal() error {
-	if p.number() == nil {
+	if p.literalNumber() == nil {
 		return nil
-	}
-	if p.stringLiteral() == nil {
+	} else if p.literalString() == nil {
 		return nil
-	}
-	if p.true() == nil {
+	} else if p.literalTrue() == nil {
 		return nil
-	}
-	if p.false() == nil {
+	} else if p.literalFalse() == nil {
 		return nil
+	} else if p.literalNull() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.null()
 }
 
-func (p *Parser) number() error {
-	if err := p.int(); err != nil {
-		if err := p.expect(grammar.Minus); err != nil {
-			return err
-		}
-		if err := p.expect('0'); err != nil {
-			return err
-		}
+func (p *Parser) literalNumber() error {
+	if err := p.int(); err == nil {
+	} else if err := p.negativeZero(); err == nil {
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	if err := p.frac(); err != nil {
-		_ = p.exp()
-	}
+	_ = p.frac()
+	_ = p.exp()
 	return nil
+}
+
+func (p *Parser) negativeZero() error {
+	if err := p.expect(grammar.Minus); err != nil {
+		return err
+	}
+	return p.expect('0')
 }
 
 func (p *Parser) frac() error {
 	if err := p.expect(grammar.Dot); err != nil {
 		return err
-	}
-	if err := p.expectBy(isDigit1); err != nil {
-		return err
-	}
-	for p.expectBy(isDigit1) == nil {
-	}
-	return nil
-}
-
-func (p *Parser) exp() error {
-	if err := p.expect('e'); err != nil {
-		return err
-	}
-	if err := p.expect(grammar.Minus); err != nil {
-		_ = p.expect(grammar.Plus)
 	}
 	if err := p.expectBy(isDigit); err != nil {
 		return err
@@ -568,81 +579,97 @@ func (p *Parser) exp() error {
 	return nil
 }
 
-func (p *Parser) true() error {
-	for _, r := range [...]rune{'t', 'r', 'u', 'e'} {
-		if err := p.expect(r); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *Parser) false() error {
-	for _, r := range [...]rune{'f', 'a', 'l', 's', 'e'} {
-		if err := p.expect(r); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *Parser) null() error {
-	for _, r := range [...]rune{'n', 'u', 'l', 'l'} {
-		if err := p.expect(r); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *Parser) singularQuery() error {
-	if p.relSingularQuery() == nil {
-		return nil
-	}
-	return p.absSingularQuery()
-}
-
-func (p *Parser) relSingularQuery() error {
-	if err := p.currNodeIdent(); err != nil {
+func (p *Parser) exp() error {
+	if err := p.expect('e'); err != nil {
 		return err
 	}
-	return p.singularQuerySegments()
+	if p.expect(grammar.Minus) == nil {
+	} else if p.expect(grammar.Plus) == nil {
+	}
+	if err := p.expectBy(isDigit); err != nil {
+		return err
+	}
+	for p.expectBy(isDigit) == nil {
+	}
+	return nil
 }
 
-func (p *Parser) currNodeIdent() error {
+func (p *Parser) literalTrue() error {
+	for _, r := range grammar.True {
+		if err := p.expect(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) literalFalse() error {
+	for _, r := range grammar.False {
+		if err := p.expect(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) literalNull() error {
+	for _, r := range grammar.Null {
+		if err := p.expect(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Parser) querySingular() error {
+	if p.querySingularRel() == nil {
+		return nil
+	} else if p.querySingularAbs() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
+	}
+}
+
+func (p *Parser) querySingularRel() error {
+	if err := p.identCurrNode(); err != nil {
+		return err
+	}
+	return p.querySingularSegments()
+}
+
+func (p *Parser) identCurrNode() error {
 	return p.expect(grammar.At)
 }
 
-func (p *Parser) singularQuerySegments() error {
+func (p *Parser) querySingularSegments() error {
 	for {
 		if !p.matchBy(isBlankSpace) {
 			break
 		}
 		p.blankSpace()
-		if err := p.nameSegment(); err == nil {
+		if p.segmentName() == nil {
 			continue
-		}
-		if err := p.indexSegment(); err != nil {
-			return err
+		} else if p.segmentIndex() == nil {
+			continue
+		} else {
+			return p.errorUnsupportedToken()
 		}
 	}
 	return nil
 }
 
-func (p *Parser) nameSegment() error {
-	if err := p.expect(grammar.BracketOpen); err == nil {
-		if err := p.nameSelector(); err != nil {
+func (p *Parser) segmentName() error {
+	if p.expect(grammar.BracketOpen) == nil {
+		if err := p.selectorName(); err != nil {
 			return err
 		}
-		if err := p.expect(grammar.BracketClose); err != nil {
-			return err
-		}
-		return nil
+		return p.expect(grammar.BracketClose)
+	} else if p.expect(grammar.Dot) == nil {
+		return p.memberNameShorthand()
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	if err := p.expect(grammar.Dot); err != nil {
-		return err
-	}
-	return p.memberNameShorthand()
 }
 
 func (p *Parser) memberNameShorthand() error {
@@ -654,7 +681,7 @@ func (p *Parser) memberNameShorthand() error {
 	return nil
 }
 
-func (p *Parser) indexSegment() error {
+func (p *Parser) segmentIndex() error {
 	if err := p.expect(grammar.BracketOpen); err != nil {
 		return err
 	}
@@ -664,11 +691,11 @@ func (p *Parser) indexSegment() error {
 	return p.expect(grammar.BracketClose)
 }
 
-func (p *Parser) absSingularQuery() error {
-	if err := p.rootIdent(); err != nil {
+func (p *Parser) querySingularAbs() error {
+	if err := p.identRootNode(); err != nil {
 		return err
 	}
-	return p.singularQuerySegments()
+	return p.querySingularSegments()
 }
 
 func (p *Parser) functionExpr() error {
@@ -714,35 +741,41 @@ func (p *Parser) functionNameFirst() error {
 func (p *Parser) functionNameChar() error {
 	if p.functionNameFirst() == nil {
 		return nil
-	}
-	if p.expect(grammar.Underscore) == nil {
+	} else if p.expect(grammar.Underscore) == nil {
 		return nil
+	} else if p.expectBy(isDigit) == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.expectBy(isDigit)
 }
 
 func (p *Parser) functionArgument() error {
 	if p.literal() == nil {
 		return nil
-	}
-	if p.filterSelector() == nil {
+	} else if p.selectorFilter() == nil {
 		return nil
-	}
-	if p.logicalExpr() == nil {
+	} else if p.logicalExpr() == nil {
 		return nil
+	} else if p.functionExpr() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.functionExpr()
 }
 
-func (p *Parser) filterQuery() error {
-	if p.relQuery() == nil {
+func (p *Parser) queryFilter() error {
+	if p.queryRel() == nil {
 		return nil
+	} else if p.queryJSONPath() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.jsonpathQuery()
 }
 
-func (p *Parser) relQuery() error {
-	if err := p.currNodeIdent(); err != nil {
+func (p *Parser) queryRel() error {
+	if err := p.identCurrNode(); err != nil {
 		return err
 	}
 	return p.segments()
@@ -751,59 +784,47 @@ func (p *Parser) relQuery() error {
 func (p *Parser) comparisonOp() error {
 	if p.expect(grammar.Eq) == nil {
 		return p.expect(grammar.Eq)
-	}
-	if p.expect(grammar.Bang) == nil {
+	} else if p.expect(grammar.Bang) == nil {
 		return p.expect(grammar.Eq)
-	}
-	if p.expect(grammar.Lt) == nil {
+	} else if p.expect(grammar.Lt) == nil {
 		_ = p.expect(grammar.Eq)
+		return nil
+	} else if p.expect(grammar.Gt) == nil {
+		_ = p.expect(grammar.Eq)
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	if err := p.expect(grammar.Gt); err != nil {
-		return err
-	}
-	_ = p.expect(grammar.Eq)
-	return nil
 }
 
 func (p *Parser) testExpr() error {
 	if p.expect(grammar.Bang) == nil {
 		p.blankSpace()
 	}
-	if p.filterQuery() == nil {
+	if p.queryFilter() == nil {
 		return nil
+	} else if p.functionExpr() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.functionExpr()
 }
 
-func (p *Parser) descendantSegment() error {
-	if err := p.expect(grammar.Dot); err != nil {
-		return err
-	}
-	if err := p.expect(grammar.Dot); err != nil {
-		return err
+func (p *Parser) segmentDescendant() error {
+	for _, r := range grammar.DescendantPrefix {
+		if err := p.expect(r); err != nil {
+			return err
+		}
 	}
 	if p.bracketedSelection() == nil {
 		return nil
-	}
-	if p.wildcardSelector() == nil {
+	} else if p.selectorWildcard() == nil {
 		return nil
+	} else if p.memberNameShorthand() == nil {
+		return nil
+	} else {
+		return p.errorUnsupportedToken()
 	}
-	return p.memberNameShorthand()
-}
-
-func getUnescapedQuote(quote rune) (rune, error) {
-	switch quote {
-	case grammar.QuoteDouble:
-		return grammar.QuoteSingle, nil
-	case grammar.QuoteSingle:
-		return grammar.QuoteDouble, nil
-	default:
-		return 0, errors.New("invalid quote")
-	}
-}
-
-func isQuote(r rune) bool {
-	return r == grammar.QuoteDouble || r == grammar.QuoteSingle
 }
 
 func isBlankSpace(r rune) bool {
