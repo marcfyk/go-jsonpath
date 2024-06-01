@@ -18,19 +18,19 @@ func New(jsonpath string) Parser {
 	}
 }
 
-// ErrUnexpectedToken is the error type when the parser encounters a token
+// ErrUnexpectedCodepoint is the error type when the parser encounters a codepoint
 // it does not expect at its given state.
-type ErrUnexpectedToken struct {
-	// token is the actual unicode codepoint encountered by the parser.
-	token *rune
-	// index is the index of the unicode codepoint of token.
+type ErrUnexpectedCodepoint struct {
+	// codepoint is the actual unicode codepoint encountered by the parser.
+	codepoint *rune
+	// index is the index of the unicode codepoint.
 	index int
 }
 
-func (e ErrUnexpectedToken) Error() string {
+func (e ErrUnexpectedCodepoint) Error() string {
 	return fmt.Sprintf(
-		"unexpected token:%v; found at index:%d",
-		e.token, e.index)
+		"unexpected codepoint:%v; found at index:%d",
+		e.codepoint, e.index)
 }
 
 // Parser is a recursive descent parser that scans jsonpath strings.
@@ -50,12 +50,12 @@ func (p *Parser) Parse() error {
 	return p.queryJSONPath()
 }
 
-// errorUnsupportedToken returns an ErrUnsupportedToken error with the current state of
+// errorUnsupportedCodepoint returns an ErrUnexpectedCodepoint error with the current state of
 // the Parser's currCodepoint and index.
-func (p *Parser) errorUnsupportedToken() ErrUnexpectedToken {
-	return ErrUnexpectedToken{
-		token: p.currCodepoint,
-		index: p.index,
+func (p *Parser) errorUnsupportedCodepoint() ErrUnexpectedCodepoint {
+	return ErrUnexpectedCodepoint{
+		codepoint: p.currCodepoint,
+		index:     p.index,
 	}
 }
 
@@ -87,7 +87,7 @@ func (p *Parser) match(codepoint rune) bool {
 // If the predicate evaluates to false, then ErrUnexpectedToken is returned.
 func (p *Parser) expectBy(f func(rune) bool) error {
 	if !p.matchBy(f) {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 	p.shift()
 	return nil
@@ -135,7 +135,7 @@ func (p *Parser) segment() error {
 	} else if p.segmentDescendant() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -151,7 +151,7 @@ func (p *Parser) segmentChild() error {
 		} else if p.memberNameShorthand() == nil {
 			return nil
 		} else {
-			return p.errorUnsupportedToken()
+			return p.errorUnsupportedCodepoint()
 		}
 	}
 }
@@ -193,7 +193,7 @@ func (p *Parser) selector() error {
 	} else if p.selectorFilter() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -211,7 +211,7 @@ func (p *Parser) literalString() error {
 		}
 		return p.expect(grammar.QuoteSingle)
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -226,10 +226,10 @@ func (p *Parser) quotedDouble() error {
 		} else if p.escapable() == nil {
 			return nil
 		} else {
-			return p.errorUnsupportedToken()
+			return p.errorUnsupportedCodepoint()
 		}
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -244,10 +244,10 @@ func (p *Parser) quotedSingle() error {
 		} else if p.escapable() == nil {
 			return nil
 		} else {
-			return p.errorUnsupportedToken()
+			return p.errorUnsupportedCodepoint()
 		}
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -469,7 +469,7 @@ func (p *Parser) basicExpr() error {
 	} else if p.testExpr() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -529,7 +529,7 @@ func (p *Parser) comparable() error {
 	} else if p.functionExpr() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -545,7 +545,7 @@ func (p *Parser) literal() error {
 	} else if p.literalNull() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -553,7 +553,7 @@ func (p *Parser) literalNumber() error {
 	if err := p.int(); err == nil {
 	} else if err := p.negativeZero(); err == nil {
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 	_ = p.frac()
 	_ = p.exp()
@@ -627,7 +627,7 @@ func (p *Parser) querySingular() error {
 	} else if p.querySingularAbs() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -653,7 +653,7 @@ func (p *Parser) querySingularSegments() error {
 		} else if p.segmentIndex() == nil {
 			continue
 		} else {
-			return p.errorUnsupportedToken()
+			return p.errorUnsupportedCodepoint()
 		}
 	}
 	return nil
@@ -668,7 +668,7 @@ func (p *Parser) segmentName() error {
 	} else if p.expect(grammar.Dot) == nil {
 		return p.memberNameShorthand()
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -746,7 +746,7 @@ func (p *Parser) functionNameChar() error {
 	} else if p.expectBy(isDigit) == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -760,7 +760,7 @@ func (p *Parser) functionArgument() error {
 	} else if p.functionExpr() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -770,7 +770,7 @@ func (p *Parser) queryFilter() error {
 	} else if p.queryJSONPath() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -793,7 +793,7 @@ func (p *Parser) comparisonOp() error {
 		_ = p.expect(grammar.Eq)
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -806,7 +806,7 @@ func (p *Parser) testExpr() error {
 	} else if p.functionExpr() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
@@ -823,7 +823,7 @@ func (p *Parser) segmentDescendant() error {
 	} else if p.memberNameShorthand() == nil {
 		return nil
 	} else {
-		return p.errorUnsupportedToken()
+		return p.errorUnsupportedCodepoint()
 	}
 }
 
