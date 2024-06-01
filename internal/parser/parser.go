@@ -3,7 +3,7 @@ package parser
 import (
 	"fmt"
 
-	"github.com/marcfyk/go-jsonpath/internal/grammar"
+	"github.com/marcfyk/go-jsonpath/internal/parser/grammar"
 )
 
 func New(jsonpath string) Parser {
