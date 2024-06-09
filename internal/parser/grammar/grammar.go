@@ -1,3 +1,4 @@
+// Package grammar holds some grammar constants and logical groupings of characters.
 package grammar
 
 const (
@@ -28,7 +29,7 @@ const (
 	BackSlash     = '\\'   // backslash (reverse solidus) U+005C
 	UnicodeEscape = '\x75' // unicode escape
 
-	Wildcard = '*'
+	Asterisk = '*'
 
 	Minus = '-'
 	Plus  = '+'
@@ -53,6 +54,12 @@ const (
 
 	Ampersand = '&'
 	Pipe      = '|'
+
+	FuncLength = "length"
+	FuncCount  = "count"
+	FuncMatch  = "match"
+	FuncSearch = "search"
+	FuncValue  = "value"
 )
 
 var (

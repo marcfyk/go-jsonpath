@@ -10,7 +10,10 @@ import (
 
 func TestRootIdent(t *testing.T) {
 	p := parser.New("$")
-	assert.Nil(t, p.Parse())
+	a, err := p.Parse()
+	assert.Nil(t, err)
+	assert.NotNil(t, a)
+	assert.True(t, p.IsDone(), "cursor:%d", p.Index)
 }
 
 func TestNameSelectorInChildSegments(t *testing.T) {
@@ -21,8 +24,13 @@ func TestNameSelectorInChildSegments(t *testing.T) {
 		"$.o[\"'\"][\"@\"]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -34,8 +42,13 @@ func TestWildcardSelectorInChildSegments(t *testing.T) {
 		"$.a[*]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -45,8 +58,13 @@ func TestIndexSelectorInChildSegments(t *testing.T) {
 		"$[-2]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -59,8 +77,13 @@ func TestArraySliceSelectorInChildSegment(t *testing.T) {
 		"$[::-1]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -96,8 +119,13 @@ func TestComparisonExpressions(t *testing.T) {
 		"true > true",
 	}
 	for _, path := range paths {
-		p := parser.New(fmt.Sprintf("$[?%s]", path))
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(fmt.Sprintf("$[?%s]", path))
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -119,8 +147,13 @@ func TestFilterSelectorInChildSelector(t *testing.T) {
 		"$.a[?@ == @]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }
 
@@ -128,16 +161,17 @@ func TestFunctionExtensions(t *testing.T) {
 	paths := []string{
 		"$[?length(@) < 3]",
 		"$[?count(@.*) == 1]",
-		"$[?count(foo(@.*)) == 1]",
+		"$[?count(count(@.*)) == 1]",
 		"$[?match(@.timezone, 'Europe/.*')]",
 		"$[?value(@..color) == \"red\"]",
-		"$[?bar(@.a)]",
-		"$[?bnl(@.*)]",
-		"$[?blt(1==1)]",
-		"$[?bal(1)]",
 	}
 	for _, path := range paths {
-		p := parser.New(path)
-		assert.Nil(t, p.Parse())
+		t.Run(path, func(t *testing.T) {
+			p := parser.New(path)
+			a, err := p.Parse()
+			assert.Nil(t, err)
+			assert.NotNil(t, a)
+			assert.True(t, p.IsDone(), "cursor:%d", p.Index)
+		})
 	}
 }

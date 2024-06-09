@@ -1,6 +1,11 @@
+// Package ast implements an abstract syntax tree that serves as an IR of a jsonpath query.
 package ast
 
-import "regexp"
+import (
+	"maps"
+	"regexp"
+	"slices"
+)
 
 // Value is the leaf values of a JSON structure.
 //
@@ -18,14 +23,11 @@ type Node struct {
 	Value    Value
 }
 
-// QueryArgument is the JSON applied to a JSONPath query.
-type QueryArgument interface{}
-
 type QueryJSONPath struct {
 	Segments []Expr
 }
 
-func (q QueryJSONPath) Apply(arg QueryArgument) []Node {
+func (q QueryJSONPath) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
@@ -34,6 +36,21 @@ func (q QueryJSONPath) Apply(arg QueryArgument) []Node {
 // Expr takes in 0..n nodes and outputs 0..n nodes.
 type Expr interface {
 	Evaluate([]Node) []Node
+}
+
+// ExprLogical is an expression that maps []Node -> bool.
+//
+// ExprLogical takes in a list of nodes and returns a boolean value,
+// behaving like a predicate.
+type ExprLogical interface {
+	EvaluateLogical([]Node) bool
+}
+
+// ExprSingle is an expression that evaluates []Node -> Node.
+//
+// ExprSingle is an expression that takes in a list of nodes but returns only 1 node.
+type ExprSingle interface {
+	EvaluateSingle([]Node) Node
 }
 
 type SegmentChild struct {
@@ -60,6 +77,10 @@ func (s SelectorName) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
+func (s SelectorName) EvaluateSingle([]Node) Node {
+	panic("unimplemented")
+}
+
 type SelectorWildcard struct{}
 
 func (s SelectorWildcard) Evaluate([]Node) []Node {
@@ -67,9 +88,9 @@ func (s SelectorWildcard) Evaluate([]Node) []Node {
 }
 
 type SelectorSlice struct {
-	Start  int
-	End    int
-	Offset int
+	Start int
+	End   int
+	Step  int
 }
 
 func (s SelectorSlice) Evaluate([]Node) []Node {
@@ -84,6 +105,10 @@ func (s SelectorIndex) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
+func (s SelectorIndex) EvaluateSingle([]Node) Node {
+	panic("unimplemented")
+}
+
 type SelectorFilter struct {
 	Expr ExprLogical
 }
@@ -92,19 +117,11 @@ func (s SelectorFilter) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
-// ExprLogical is an expression that maps []Node -> bool.
-//
-// ExprLogical takes in a list of nodes and returns a boolean value,
-// behaving like a predicate.
-type ExprLogical interface {
-	Evaluate([]Node) bool
-}
-
 type ExprLogicalOr struct {
-	Exprs []ExprLogicalAnd
+	Exprs []Expr
 }
 
-func (e ExprLogicalOr) Evaluate([]Node) bool {
+func (e ExprLogicalOr) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
@@ -112,17 +129,79 @@ type ExprLogicalAnd struct {
 	Exprs []Expr
 }
 
-func (e ExprLogicalAnd) Evaluate([]Node) bool {
+func (e ExprLogicalAnd) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
+
+type ExprLogicalNot struct {
+	Expr Expr
+}
+
+func (e ExprLogicalNot) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
 type ExprParen struct {
-	Expr ExprLogical
+	Expr Expr
 }
 
-func (e ExprParen) Evaluate([]Node) bool {
+func (e ExprParen) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
+
+var (
+	EQ = func(v1, v2 Value) bool {
+		switch v1 := v1.(type) {
+		case float64:
+			v2, ok := v2.(float64)
+			return ok && v1 == v2
+		case string:
+			v2, ok := v2.(string)
+			return ok && v1 == v2
+		case bool:
+			v2, ok := v2.(bool)
+			return ok && v1 == v2
+		case []any:
+			v2, ok := v2.([]any)
+			return ok && slices.Equal(v1, v2)
+		case map[string]any:
+			v2, ok := v2.(map[string]any)
+			return ok && maps.Equal(v1, v2)
+		case nil:
+			return v2 == nil
+		default:
+			return false
+		}
+	}
+	NE = func(v1, v2 Value) bool {
+		return !EQ(v1, v2)
+	}
+
+	LT = func(v1, v2 Value) bool {
+		switch v1 := v1.(type) {
+		case float64:
+			v2, ok := v2.(float64)
+			return ok && v1 < v2
+		case string:
+			v2, ok := v2.(string)
+			return ok && v1 < v2
+		default:
+			return false
+		}
+	}
+
+	LTE = func(v1, v2 Value) bool {
+		return EQ(v1, v2) || LT(v1, v2)
+	}
+
+	GT = func(v1, v2 Value) bool {
+		return !LTE(v1, v2)
+	}
+
+	GTE = func(v1, v2 Value) bool {
+		return !LT(v1, v2)
+	}
+)
 
 type ExprComparison struct {
 	Left  ExprSingle
@@ -130,48 +209,19 @@ type ExprComparison struct {
 	F     func(Value, Value) bool
 }
 
-func (e ExprComparison) Evaluate([]Node) bool {
+func (e ExprComparison) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
-// ExprSingle is an expression that evaluates []Node -> Node.
-//
-// ExprSingle is an expression that takes in a list of nodes but returns only 1 node.
-type ExprSingle interface {
-	Evaluate([]Node) Node
+type Literal struct {
+	Value Value
 }
 
-type LiteralNumber struct {
-	Value float64
-}
-
-func (l LiteralNumber) Evaluate([]Node) Node {
+func (l Literal) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
-type LiteralString struct {
-	Value string
-}
-
-func (l LiteralString) Evaluate([]Node) Node {
-	panic("unimplemented")
-}
-
-type LiteralTrue struct{}
-
-func (l LiteralTrue) Evaluate([]Node) Node {
-	panic("unimplemented")
-}
-
-type LiteralFalse struct{}
-
-func (l LiteralFalse) Evaluate([]Node) Node {
-	panic("unimplemented")
-}
-
-type LiteralNull struct{}
-
-func (l LiteralNull) Evaluate([]Node) Node {
+func (l Literal) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
@@ -179,7 +229,11 @@ type QuerySingularRel struct {
 	Segments []ExprSingle
 }
 
-func (q QuerySingularRel) Evaluate([]Node) Node {
+func (q QuerySingularRel) EvaluateSingle([]Node) Node {
+	panic("unimplemented")
+}
+
+func (q QuerySingularRel) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
@@ -187,7 +241,11 @@ type QuerySingularAbs struct {
 	Segments []ExprSingle
 }
 
-func (q QuerySingularAbs) Evaluate([]Node) Node {
+func (q QuerySingularAbs) EvaluateSingle([]Node) Node {
+	panic("unimplemented")
+}
+
+func (q QuerySingularAbs) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
@@ -195,15 +253,15 @@ type SegmentName struct {
 	Name string
 }
 
-func (s SegmentName) Evaluate([]Node) Node {
+func (s SegmentName) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
 type SegmentIndex struct {
-	Index string
+	Index int
 }
 
-func (s SegmentIndex) Evaluate([]Node) Node {
+func (s SegmentIndex) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
@@ -215,44 +273,78 @@ func (q QueryRel) Evaluate([]Node) []Node {
 	panic("unimplemented")
 }
 
-// ExprFunc is an expression that maps some Value -> Value.
-//
-// ExprFunc takes in some value -> value depending on the
-// type of function it is.
-type ExprFunc interface {
-	Evaluate(Value) Value
-}
-
 type FuncLength struct{}
 
-func (f FuncLength) Evaluate(Value) Value {
+func (f FuncLength) EvaluateFunc(Value) Value {
+	panic("unimplemented")
+}
+
+func (f FuncLength) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
+
+func (f FuncLength) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
 type FuncCount struct{}
 
-func (f FuncCount) Evaluate(Value) Value {
+func (f FuncCount) EvaluateFunc(Value) Value {
+	panic("unimplemented")
+}
+
+func (f FuncCount) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
+
+func (f FuncCount) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
 type FuncMatch struct {
-	Regex regexp.Regexp
+	Regex *regexp.Regexp
 }
 
-func (f FuncMatch) Evaluate(Value) Value {
+func (f FuncMatch) EvaluateFunc(Value) Value {
+	panic("unimplemented")
+}
+
+func (f FuncMatch) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
+
+func (f FuncMatch) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
 
 type FuncSearch struct {
-	Regex regexp.Regexp
+	Regex *regexp.Regexp
 }
 
-func (f FuncSearch) Evaluate(Value) Value {
+func (f FuncSearch) EvaluateFunc(Value) Value {
 	panic("unimplemented")
 }
 
-type FuncValue struct{}
+func (f FuncSearch) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
 
-func (f FuncValue) Evaluate(Value) Value {
+func (f FuncSearch) EvaluateSingle([]Node) Node {
+	panic("unimplemented")
+}
+
+type FuncValue struct {
+	Expr Expr
+}
+
+func (f FuncValue) EvaluateFunc(Value) Value {
+	panic("unimplemented")
+}
+
+func (f FuncValue) Evaluate([]Node) []Node {
+	panic("unimplemented")
+}
+
+func (f FuncValue) EvaluateSingle([]Node) Node {
 	panic("unimplemented")
 }
