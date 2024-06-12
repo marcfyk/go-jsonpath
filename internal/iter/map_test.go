@@ -23,11 +23,11 @@ func TestFromMapAndToMap(t *testing.T) {
 
 func TestToMapDuplicate(t *testing.T) {
 	tests := []struct {
-		x []iter.MapPair[int, int]
+		x []iter.Pair[int, int]
 		y map[int]int
 	}{
 		{
-			x: []iter.MapPair[int, int]{{Key: 1, Value: 2}, {Key: 1, Value: 3}},
+			x: []iter.Pair[int, int]{{Left: 1, Right: 2}, {Left: 1, Right: 3}},
 			y: map[int]int{1: 3},
 		},
 	}

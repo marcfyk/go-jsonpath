@@ -1,19 +1,13 @@
 package iter
 
-// MapPair is the wrapper struct over key value pairs in a map.
-type MapPair[K comparable, V any] struct {
-	Key   K
-	Value V
-}
-
 // FromMap creates an iterator over elements in a map.
 // This operation is O(n) as it is not possible to lazily evaluate
 // values in a map unless we use a go routine.
-func FromMap[K comparable, V any](m map[K]V) Iterator[MapPair[K, V]] {
-	pairs := make([]MapPair[K, V], len(m))
+func FromMap[K comparable, V any](m map[K]V) Iterator[Pair[K, V]] {
+	pairs := make([]Pair[K, V], len(m))
 	i := 0
 	for k, v := range m {
-		pairs[i] = MapPair[K, V]{Key: k, Value: v}
+		pairs[i] = Pair[K, V]{Left: k, Right: v}
 		i++
 	}
 	return FromSlice(pairs)
@@ -21,10 +15,10 @@ func FromMap[K comparable, V any](m map[K]V) Iterator[MapPair[K, V]] {
 
 // ToMap collects an iterator into a map.
 // Duplicate keys will be overwritten with the latest key, value pair from the iterator.
-func ToMap[K comparable, V any](kvs Iterator[MapPair[K, V]]) map[K]V {
+func ToMap[K comparable, V any](kvs Iterator[Pair[K, V]]) map[K]V {
 	m := make(map[K]V)
 	for kv := kvs(); kv != nil; kv = kvs() {
-		m[kv.Key] = kv.Value
+		m[kv.Left] = kv.Right
 	}
 	return m
 }
