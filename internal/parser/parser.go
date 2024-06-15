@@ -407,18 +407,18 @@ func (p *Parser) selectorWildcard() (ast.Expr, error) {
 }
 
 func (p *Parser) selectorSlice() (ast.Expr, error) {
-	start := 0
+	var start *int
 	if s, err := p.start(); err == nil {
-		start = s
+		start = &s
 		p.blankSpace()
 	}
 	if err := p.expect(grammar.Colon); err != nil {
 		return nil, err
 	}
 	p.blankSpace()
-	end := -1
+	var end *int
 	if e, err := p.end(); err == nil {
-		end = e
+		end = &e
 		p.blankSpace()
 	}
 	step := 1
