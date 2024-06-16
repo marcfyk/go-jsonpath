@@ -32,6 +32,7 @@ func TestSelectorNameEvaluate(t *testing.T) {
 				{Location: "$", Value: map[string]any{"a": float64(1), "b": nil, "c": "abc"}},
 				{Location: "$", Value: map[string]any{"a": "b"}},
 				{Location: "$", Value: map[string]any{"a": nil}},
+				{Location: "$", Value: map[string]any{"b": "abc"}},
 				{Location: "$", Value: map[string]any{"a": []any{float64(1), "a", nil}}},
 			},
 			expected: []ast.Node{
@@ -171,6 +172,70 @@ func TestSelectorSliceEvaluate(t *testing.T) {
 	}
 	for _, test := range tests {
 		name := fmt.Sprintf("%s | %+v = %+v", test.input, test.selector, test.expected)
+		t.Run(name, func(t *testing.T) {
+			nodes := iter.FromSlice(test.input)
+			output := test.selector.Evaluate(nodes)
+			assert.Equal(t, test.expected, iter.ToSlice(output))
+		})
+	}
+}
+
+func TestSelectorIndexEvaluate(t *testing.T) {
+	tests := []struct {
+		selector ast.SelectorIndex
+		input    []ast.Node
+		expected []ast.Node
+	}{
+		{
+			selector: ast.SelectorIndex{Index: 1},
+			input:    make([]ast.Node, 0),
+			expected: make([]ast.Node, 0),
+		},
+		{
+			selector: ast.SelectorIndex{Index: 1},
+			input: []ast.Node{
+				{Location: "$", Value: nil},
+				{Location: "$", Value: float64(1)},
+				{Location: "$", Value: "a"},
+				{Location: "$", Value: []any{float64(1), "a", nil}},
+				{Location: "$", Value: map[string]any{"a": nil}},
+				{Location: "$", Value: []any{1, []any{float64(1), "a", nil}}},
+			},
+			expected: []ast.Node{
+				{Location: "$[1]", Value: "a"},
+				{Location: "$[1]", Value: []any{float64(1), "a", nil}},
+			},
+		},
+		{
+			selector: ast.SelectorIndex{Index: -2},
+			input: []ast.Node{
+				{Location: "$", Value: []any{float64(1), "a", nil}},
+				{Location: "$", Value: []any{float64(1), []any{float64(1), "a", nil}}},
+			},
+			expected: []ast.Node{
+				{Location: "$[1]", Value: "a"},
+				{Location: "$[0]", Value: float64(1)},
+			},
+		},
+		{
+			selector: ast.SelectorIndex{Index: 200},
+			input: []ast.Node{
+				{Location: "$", Value: []any{float64(1), "a", nil}},
+				{Location: "$", Value: []any{float64(1), []any{float64(1), "a", nil}}},
+			},
+			expected: []ast.Node{},
+		},
+		{
+			selector: ast.SelectorIndex{Index: -200},
+			input: []ast.Node{
+				{Location: "$", Value: []any{float64(1), "a", nil}},
+				{Location: "$", Value: []any{float64(1), []any{float64(1), "a", nil}}},
+			},
+			expected: []ast.Node{},
+		},
+	}
+	for _, test := range tests {
+		name := fmt.Sprintf("%v | %v = %v", test.input, test.selector, test.expected)
 		t.Run(name, func(t *testing.T) {
 			nodes := iter.FromSlice(test.input)
 			output := test.selector.Evaluate(nodes)

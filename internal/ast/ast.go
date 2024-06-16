@@ -95,8 +95,12 @@ func (s SelectorName) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
 	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
 		switch v := n.Value.(type) {
 		case map[string]any:
+			value, ok := v[s.Name]
+			if !ok {
+				return iter.Empty[Node]()
+			}
 			location := Location(fmt.Sprintf("%s[\"%s\"]", n.Location, s.Name))
-			node := Node{Location: location, Value: v[s.Name]}
+			node := Node{Location: location, Value: value}
 			return iter.Singleton(node)
 		default:
 			return iter.Empty[Node]()
@@ -204,8 +208,24 @@ type SelectorIndex struct {
 	Index int
 }
 
-func (s SelectorIndex) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (s SelectorIndex) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
+		switch v := n.Value.(type) {
+		case []any:
+			index := s.Index
+			if index < 0 {
+				index += len(v)
+			}
+			if index < 0 || index >= len(v) {
+				return iter.Empty[Node]()
+			}
+			location := Location(fmt.Sprintf("%s[%d]", n.Location, index))
+			node := Node{Location: location, Value: v[index]}
+			return iter.Singleton(node)
+		default:
+			return iter.Empty[Node]()
+		}
+	})
 }
 
 func (s SelectorIndex) EvaluateSingle(iter.Iterator[Node]) Node {
