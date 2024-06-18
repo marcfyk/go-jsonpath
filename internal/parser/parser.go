@@ -1112,19 +1112,6 @@ func isHexDig(r rune) bool {
 	return isDigit(r) || ('A' <= r && r <= 'F')
 }
 
-func isValidFunc(name string) bool {
-	switch name {
-	case grammar.FuncLength,
-		grammar.FuncCount,
-		grammar.FuncMatch,
-		grammar.FuncSearch,
-		grammar.FuncValue:
-		return true
-	default:
-		return false
-	}
-}
-
 func isSupportedFunc(name string) bool {
 	switch name {
 	case grammar.FuncLength, grammar.FuncCount, grammar.FuncMatch, grammar.FuncSearch, grammar.FuncValue:
@@ -1187,12 +1174,12 @@ func generateFunc(name string, args []ast.Expr) (ast.Expr, error) {
 		if len(args) != 1 {
 			return nil, ErrWrongArgsCountFunction{Name: name, Expected: 1, Actual: len(args)}
 		}
-		return ast.FuncLength{}, nil
+		return ast.FuncLength{Arg: args[0]}, nil
 	case grammar.FuncCount:
 		if len(args) != 1 {
 			return nil, ErrWrongArgsCountFunction{Name: name, Expected: 1, Actual: len(args)}
 		}
-		return ast.FuncCount{}, nil
+		return ast.FuncCount{Arg: args[0]}, nil
 	case grammar.FuncMatch:
 		if len(args) != 2 {
 			return nil, ErrWrongArgsCountFunction{Name: name, Expected: 1, Actual: len(args)}

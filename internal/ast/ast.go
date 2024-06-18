@@ -29,6 +29,7 @@ type Node struct {
 // Expr is an expression that maps []Node -> []Node.
 //
 // Expr takes in 0..n nodes and outputs 0..n nodes.
+// Expr acts like a transformation on nodes.
 type Expr interface {
 	Evaluate(iter.Iterator[Node]) iter.Iterator[Node]
 }
@@ -41,11 +42,13 @@ type ExprLogical interface {
 	EvaluateLogical(iter.Iterator[Node]) bool
 }
 
-// ExprSingle is an expression that evaluates []Node -> Node.
+// ExprSingle is an expression that evaluates Node -> *Node.
 //
-// ExprSingle is an expression that takes in a list of nodes but returns only 1 node.
+// ExprSingle is an expression that takes in a node but returns
+// a pointer to a node.
+// ExprSingle acts like a mapping function that may produce at most 1 node.
 type ExprSingle interface {
-	EvaluateSingle(iter.Iterator[Node]) Node
+	EvaluateSingle(Node) *Node
 }
 
 type QueryJSONPath struct {
@@ -228,48 +231,66 @@ func (s SelectorIndex) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
 	})
 }
 
-func (s SelectorIndex) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
-}
-
 type SelectorFilter struct {
-	Expr ExprLogical
+	Expr Expr
 }
 
-func (s SelectorFilter) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (s SelectorFilter) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Filter(nodes, func(n Node) bool {
+		result := s.Expr.Evaluate(iter.Singleton(n))
+		return result() != nil
+	})
 }
 
 type ExprLogicalOr struct {
 	Exprs []Expr
 }
 
-func (e ExprLogicalOr) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (e ExprLogicalOr) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Filter(nodes, func(n Node) bool {
+		for _, e := range e.Exprs {
+			if result := e.Evaluate(iter.Singleton(n)); result != nil {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 type ExprLogicalAnd struct {
 	Exprs []Expr
 }
 
-func (e ExprLogicalAnd) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (e ExprLogicalAnd) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Filter(nodes, func(n Node) bool {
+		for _, e := range e.Exprs {
+			if result := e.Evaluate(iter.Singleton(n)); result == nil {
+				return false
+			}
+		}
+		return true
+	})
 }
 
 type ExprLogicalNot struct {
 	Expr Expr
 }
 
-func (e ExprLogicalNot) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (e ExprLogicalNot) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Filter(nodes, func(n Node) bool {
+		result := e.Expr.Evaluate(iter.Singleton(n))
+		return result() == nil
+	})
 }
 
 type ExprParen struct {
 	Expr Expr
 }
 
-func (e ExprParen) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (e ExprParen) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
+		return e.Evaluate(iter.Singleton(n))
+	})
 }
 
 var (
@@ -332,87 +353,171 @@ type ExprComparison struct {
 	F     func(Value, Value) bool
 }
 
-func (e ExprComparison) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (e ExprComparison) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Filter(nodes, func(n Node) bool {
+		left := e.Left.EvaluateSingle(n)
+		right := e.Right.EvaluateSingle(n)
+		return e.F(left.Value, right.Value)
+	})
 }
 
 type Literal struct {
 	Value Value
 }
 
-func (l Literal) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
+func (l Literal) EvaluateSingle(n Node) *Node {
+	return &Node{Location: n.Location, Value: l.Value}
 }
 
-func (l Literal) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (l Literal) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
+		node := l.EvaluateSingle(n)
+		if node == nil {
+			return iter.Empty[Node]()
+		}
+		return iter.Singleton(*node)
+	})
 }
 
 type QuerySingularRel struct {
 	Segments []ExprSingle
 }
 
-func (q QuerySingularRel) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
+func (q QuerySingularRel) EvaluateSingle(n Node) *Node {
+	result := &n
+	for _, s := range q.Segments {
+		result = s.EvaluateSingle(*result)
+		if result == nil {
+			return nil
+		}
+	}
+	return result
 }
 
-func (q QuerySingularRel) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (q QuerySingularRel) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
+		node := q.EvaluateSingle(n)
+		if node == nil {
+			return iter.Empty[Node]()
+		}
+		return iter.Singleton(*node)
+	})
 }
 
 type QuerySingularAbs struct {
 	Segments []ExprSingle
 }
 
-func (q QuerySingularAbs) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
+func (q QuerySingularAbs) EvaluateSingle(n Node) *Node {
+	result := &n
+	for _, s := range q.Segments {
+		result = s.EvaluateSingle(*result)
+		if result == nil {
+			return nil
+		}
+	}
+	return result
 }
 
-func (q QuerySingularAbs) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+func (q QuerySingularAbs) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	return iter.Flatmap(nodes, func(n Node) iter.Iterator[Node] {
+		node := q.EvaluateSingle(n)
+		if node == nil {
+			return iter.Empty[Node]()
+		}
+		return iter.Singleton(*node)
+	})
 }
 
 type SegmentName struct {
 	Name string
 }
 
-func (s SegmentName) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
+func (s SegmentName) EvaluateSingle(n Node) *Node {
+	switch v := n.Value.(type) {
+	case map[string]any:
+		value, ok := v[s.Name]
+		if !ok {
+			return nil
+		}
+		location := Location(fmt.Sprintf("%s[\"%s\"]", n.Location, s.Name))
+		return &Node{Location: location, Value: value}
+	default:
+		return nil
+	}
 }
 
 type SegmentIndex struct {
 	Index int
 }
 
-func (s SegmentIndex) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
+func (s SegmentIndex) EvaluateSingle(n Node) *Node {
+	switch v := n.Value.(type) {
+	case []any:
+		index := s.Index
+		if index < 0 {
+			index += len(v)
+		}
+		if index < 0 || index >= len(v) {
+			return nil
+		}
+		location := Location(fmt.Sprintf("%s[%d]", n.Location, index))
+		return &Node{Location: location, Value: v[index]}
+	default:
+		return nil
+	}
 }
 
 type QueryRel struct {
 	Segments []Expr
 }
 
-func (q QueryRel) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
+func (q QueryRel) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
+	output := nodes
+	for _, s := range q.Segments {
+		output = s.Evaluate(output)
+	}
+	return output
+}
+
+type ValueType struct {
+	Value     Value
+	IsNothing bool
+}
+
+type FuncLength struct {
+	Arg Expr
+}
+
+func (f FuncLength) EvaluateFunc(v ValueType) ValueType {
+	if v.IsNothing {
+		return ValueType{IsNothing: true}
+	}
+	switch v := v.Value.(type) {
+	case string:
+		return ValueType{Value: len([]rune(v))}
+	case []any:
+		return ValueType{Value: len(v)}
+	case map[string]any:
+		return ValueType{Value: len(v)}
+	default:
+		return ValueType{IsNothing: true}
+	}
+}
+
+func (f FuncLength) Evaluate(nodes iter.Iterator[Node]) iter.Iterator[Node] {
 	panic("unimplemented")
 }
 
-type FuncLength struct{}
-
-func (f FuncLength) EvaluateFunc(Value) Value {
+func (f FuncLength) EvaluateSingle(Node) *Node {
 	panic("unimplemented")
 }
 
-func (f FuncLength) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
-	panic("unimplemented")
+type FuncCount struct {
+	Arg Expr
 }
 
-func (f FuncLength) EvaluateSingle(iter.Iterator[Node]) Node {
-	panic("unimplemented")
-}
-
-type FuncCount struct{}
-
-func (f FuncCount) EvaluateFunc(Value) Value {
+func (f FuncCount) EvaluateFunc(Value) (Value, error) {
 	panic("unimplemented")
 }
 
@@ -420,7 +525,7 @@ func (f FuncCount) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
 	panic("unimplemented")
 }
 
-func (f FuncCount) EvaluateSingle(iter.Iterator[Node]) Node {
+func (f FuncCount) EvaluateSingle(Node) *Node {
 	panic("unimplemented")
 }
 
@@ -428,7 +533,7 @@ type FuncMatch struct {
 	Regex *regexp.Regexp
 }
 
-func (f FuncMatch) EvaluateFunc(Value) Value {
+func (f FuncMatch) EvaluateFunc(Value) (Value, error) {
 	panic("unimplemented")
 }
 
@@ -436,7 +541,7 @@ func (f FuncMatch) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
 	panic("unimplemented")
 }
 
-func (f FuncMatch) EvaluateSingle(iter.Iterator[Node]) Node {
+func (f FuncMatch) EvaluateSingle(Node) *Node {
 	panic("unimplemented")
 }
 
@@ -444,7 +549,7 @@ type FuncSearch struct {
 	Regex *regexp.Regexp
 }
 
-func (f FuncSearch) EvaluateFunc(Value) Value {
+func (f FuncSearch) EvaluateFunc(Value) (Value, error) {
 	panic("unimplemented")
 }
 
@@ -452,7 +557,7 @@ func (f FuncSearch) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
 	panic("unimplemented")
 }
 
-func (f FuncSearch) EvaluateSingle(iter.Iterator[Node]) Node {
+func (f FuncSearch) EvaluateSingle(Node) *Node {
 	panic("unimplemented")
 }
 
@@ -460,7 +565,7 @@ type FuncValue struct {
 	Expr Expr
 }
 
-func (f FuncValue) EvaluateFunc(Value) Value {
+func (f FuncValue) EvaluateFunc(Value) (Value, error) {
 	panic("unimplemented")
 }
 
@@ -468,6 +573,6 @@ func (f FuncValue) Evaluate(iter.Iterator[Node]) iter.Iterator[Node] {
 	panic("unimplemented")
 }
 
-func (f FuncValue) EvaluateSingle(iter.Iterator[Node]) Node {
+func (f FuncValue) EvaluateSingle(Node) *Node {
 	panic("unimplemented")
 }
