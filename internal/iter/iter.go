@@ -79,7 +79,7 @@ func Chain[A any](xs, ys Iterator[A]) Iterator[A] {
 // as part of the output iterator.
 //
 // This is equivalent to a monadic bind operator, if we assume the iterator is a monad.
-func Flatmap[A any](xs Iterator[A], f func(A) Iterator[A]) Iterator[A] {
+func Flatmap[A, B any](xs Iterator[A], f func(A) Iterator[B]) Iterator[B] {
 	return Flatten(Map(xs, f))
 }
 
